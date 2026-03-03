@@ -1,11 +1,12 @@
 package bplustree
 
-import "encoding/binary"
-
-type NodeType int
+import (
+	"bytes"
+	"encoding/binary"
+)
 
 const (
-	NODE NodeType = iota
+	NODE = 0
 	LEAF
 )
 
@@ -156,4 +157,51 @@ func (node Node) size() uint16 {
 	// The offset value of the last key indirectly tells us
 	// the size of the node
 	return node.keyValuePosition(node.getNumberOfKeys())
+}
+
+func (node Node) appendRange(old Node, newDestination uint16, oldSource uint16, times uint16) {
+	for i := range times {
+		destination, source := newDestination+i, oldSource+i
+		node.appendKeyValue(destination, old.getPointer(source), old.getKey(source), old.getValue(source))
+	}
+}
+
+func (node Node) leafInsert(old Node, index uint16, key []byte, value []byte) {
+	node.setHeader(LEAF, old.getNumberOfKeys()+1)
+	// Copy the key-values before index
+	node.appendRange(old, 0, 0, index)
+	node.appendKeyValue(index, 0, key, value)
+	// Copy the key-values from index onwards
+	node.appendRange(old, index+1, index, old.getNumberOfKeys()-index)
+}
+
+func (node Node) leafUpdate(old Node, index uint16, key []byte, value []byte) {
+	node.setHeader(LEAF, old.getNumberOfKeys())
+	// Copy the key-values before index
+	node.appendRange(old, 0, 0, index)
+	node.appendKeyValue(index, 0, key, value)
+	// Copy the key-values from index onwards, thus the +1's
+	node.appendRange(old, index+1, index+1, old.getNumberOfKeys()-(index+1))
+}
+
+func (node Node) findKeyUpdatePosition(key []byte) uint16 {
+	numberOfKeys := node.getNumberOfKeys()
+	for i := range numberOfKeys {
+		comparison := bytes.Compare(node.getKey(i), key)
+
+		// The same key already exists in the node
+		if comparison == 0 {
+			return i
+		}
+
+		// The current key is larger in sort order than the one
+		// we're about to insert. The new key should be inserted
+		// before this one.
+		if comparison == 1 {
+			return i - 1
+		}
+	}
+
+	// The key was larger than any other. Put it last.
+	return numberOfKeys - 1
 }
